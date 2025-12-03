@@ -111,25 +111,45 @@ def login(driver):
     if load_cookies(driver):
         return True
 
-    log("Logging in with username/password...")
+    log("Opening login page...")
     driver.get(LOGIN_URL)
-    time.sleep(5)
+    time.sleep(10)
 
     try:
-        driver.find_element(By.NAME, "nick").send_keys(USERNAME)
-        driver.find_element(By.NAME, "pass").send_keys(PASSWORD)
-        driver.find_element(By.CSS_SELECTOR, "button[type=submit]").click()
-        time.sleep(8)
+        # Wait for username field (new name="username")
+        username = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.NAME, "username"))
+        )
+        password = driver.find_element(By.NAME, "password")
 
-        if "logout" in driver.page_source.lower() or "profile" in driver.current_url:
-            log("LOGIN SUCCESSFUL!")
+        username.clear()
+        username.send_keys(USERNAME)
+        time.sleep(1.5)
+        password.clear()
+        password.send_keys(PASSWORD)
+        time.sleep(1.5)
+
+        # Click the pink LOGIN button
+        btn = driver.find_element(By.XPATH, "//button[contains(text(), 'LOGIN')]")
+        driver.execute_script("arguments[0].click();", btn)
+
+        log("Login button clicked, waiting for redirect...")
+        time.sleep(12)
+
+        if any(x in driver.current_url for x in ["/home/", "/online_kon/", "/users/"]):
+            log("LOGIN 100% SUCCESSFUL!")
             save_cookies(driver)
             return True
         else:
-            log("Login failed - check username/password")
+            log("Still not logged in - checking page source...")
+            if "login" in driver.current_url:
+                log("Still on login page - wrong password or blocked")
+            driver.save_screenshot("login_debug.png")
             return False
+
     except Exception as e:
-        log(f"Login error: {e}")
+        log(f"Critical login error: {e}")
+        driver.save_screenshot("login_critical.png")
         return False
 
 # ============================================================================
