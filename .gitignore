@@ -1,0 +1,14 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.log
+*.pkl
+*.png
+
+# Environment
+.env
+credentials.json
