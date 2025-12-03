@@ -1,0 +1,33 @@
+name: DamaDam Scraper
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # Every 30 minutes
+  workflow_dispatch:
+    inputs:
+      max_profiles:
+        description: 'Max profiles per run (0 = unlimited)'
+        default: '0'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install selenium gspread google-auth
+
+      - name: Run Scraper
+        env:
+          DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
+          DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          MAX_PROFILES_PER_RUN: ${{ inputs.max_profiles || '0' }}
+        run: python Scraper.py --limit ${{ inputs.max_profiles || '0' }}
