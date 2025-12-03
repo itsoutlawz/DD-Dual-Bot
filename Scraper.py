@@ -73,56 +73,82 @@ def load_cookies(driver):
     try:
         driver.get(HOME_URL)
         with open(COOKIE_FILE, "rb") as f:
-            for cookie in pickle.load(f):
-                try: driver.add_cookie(cookie)
-                except: pass
+            cookies = pickle.load(f)
+            for cookie in cookies:
+                if 'expiry' in cookie:
+                    del cookie['expiry']
+                try:
+                    driver.add_cookie(cookie)
+                except:
+                    pass
         driver.refresh()
-        time.sleep(5)
+        time.sleep(6)
         if "logout" in driver.page_source.lower():
-            log("Logged in using saved cookies!")
+            log("Fast login via cookies!")
             return True
-    except: pass
+    except Exception as e:
+        log(f"Cookie load failed: {e}")
     return False
 
 def login(driver):
     if load_cookies(driver):
-        return True
+        driver.get(HOME_URL)
+        time.sleep(5)
+        if "logout" in driver.page_source.lower() or "online_kon" in driver.current_url:
+            log("Logged in using saved cookies!")
+            return True
 
-    log("Logging in with username/password...")
+    log("Logging in with super strong method (Target Bot style)...")
     driver.get(LOGIN_URL)
     time.sleep(10)
 
+    # YEHI HAI ASLI JADU — DONO FORM KO PAKADTA HAI
     try:
-        # NEW FIELD NAMES (current damadam.pk)
-        username = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.NAME, "username"))
+        # Pehle purana form try (#nick or name='nick')
+        nick_field = WebDriverWait(driver, 8).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "#nick, input[name='nick'], input[name='username']"))
         )
-        password = driver.find_element(By.NAME, "password")
-
-        username.clear()
-        username.send_keys(USERNAME)
+        # Password field ko type=password se pakdo (hamesha kaam karta hai)
+        pass_field = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+        
+        # Agar naya form hai to username/password use hoga
+        nick_field.clear()
+        nick_field.send_keys(USERNAME)
         time.sleep(1)
-        password.clear()
-        password.send_keys(PASSWORD)
+        
+        pass_field.clear()
+        pass_field.send_keys(PASSWORD)
         time.sleep(1)
 
-        btn = driver.find_element(By.XPATH, "//button[contains(text(), 'LOGIN')]")
+        # Button ko multiple ways se click
+        try:
+            btn = driver.find_element(By.XPATH, "//button[contains(text(), 'LOGIN')]")
+        except:
+            btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        
         driver.execute_script("arguments[0].click();", btn)
-
-        log("Login button clicked, waiting...")
+        
+        log("Login submitted, waiting for redirect...")
         time.sleep(12)
 
-        if any(x in driver.current_url for x in ["/home/", "/online_kon/", "/users/"]):
-            log("LOGIN 100% SUCCESS!")
+        # Success check (multiple conditions)
+        current_url = driver.current_url.lower()
+        page_source = driver.page_source.lower()
+
+        if ("logout" in page_source or 
+            "online_kon" in current_url or 
+            "damadam.pk/" in current_url and "login" not in current_url):
+            log("LOGIN 100% SUCCESSFUL (Target Bot Method)!")
             save_cookies(driver)
             return True
         else:
-            log("Login FAILED")
-            driver.save_screenshot("login_failed.png")
+            log("Login failed - still on login page")
+            driver.save_screenshot("login_failed_final.png")
             return False
+
     except Exception as e:
-        log(f"Login error: {e}")
-        driver.save_screenshot("login_error.png")
+        log(f"Login critical error: {e}")
+        driver.save_screenshot("login_critical_error.png")
         return False
 
 # ============================= SHEETS =============================
