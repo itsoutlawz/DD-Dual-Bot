@@ -12,6 +12,7 @@ import json
 import random
 import argparse
 import pickle
+import pickle
 from datetime import datetime, timedelta, timezone
 
 from selenium import webdriver
@@ -23,11 +24,16 @@ from selenium.webdriver.support import expected_conditions as EC
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
+from gspread.exceptions import WorksheetNotFound
 
 # ============================= CONFIG =============================
 USERNAME = os.getenv("DAMADAM_USERNAME")
 PASSWORD = os.getenv("DAMADAM_PASSWORD")
+# ============================= CONFIG =============================
+USERNAME = os.getenv("DAMADAM_USERNAME")
+PASSWORD = os.getenv("DAMADAM_PASSWORD")
 HOME_URL = "https://damadam.pk/"
+LOGIN_URL = "https://damadam.pk/login/"
 LOGIN_URL = "https://damadam.pk/login/"
 ONLINE_URL = "https://damadam.pk/online_kon/"
 COOKIE_FILE = "damadam_cookies.pkl"
@@ -37,8 +43,12 @@ GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON')
 
 # ============================= HELPERS =============================
 def pkt_time():
+# ============================= HELPERS =============================
+def pkt_time():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
 
+def log(msg):
+    print(f"[{pkt_time().strftime('%H:%M:%S')}] {msg}")
 def log(msg):
     print(f"[{pkt_time().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
@@ -72,6 +82,7 @@ def setup_browser():
     options.add_experimental_option("useAutomationExtension", False)
     driver = webdriver.Chrome(options=options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
+    driver.set_page_load_timeout(30)
     driver.set_page_load_timeout(30)
     return driver
 
@@ -167,13 +178,20 @@ def login(driver):
             debug_ss("08_FINAL_FAILED")
             return False
 
+
     except Exception as e:
         log(f"Login error: {e}")
         debug_ss("09_CRITICAL_ERROR")
         return False
 
 # ============================= SHEETS =============================
+# ============================= SHEETS =============================
 class Sheets:
+    def __init__(self):
+        client = gspread.authorize(Credentials.from_service_account_info(
+            json.loads(GOOGLE_CREDENTIALS_JSON),
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        ))
     def __init__(self):
         client = gspread.authorize(Credentials.from_service_account_info(
             json.loads(GOOGLE_CREDENTIALS_JSON),
@@ -186,24 +204,36 @@ class Sheets:
         self.dash = self.ws("Dashboard", ["Metric","Value"])
 
     def ws(self, name, headers):
+    def ws(self, name, headers):
         try:
             ws = self.wb.worksheet(name)
             if ws.row_values(1) != headers:
                 ws.update('A1', [headers])
+            if ws.row_values(1) != headers:
+                ws.update('A1', [headers])
         except WorksheetNotFound:
+            ws = self.wb.add_worksheet(title=name, rows=5000, cols=len(headers))
             ws = self.wb.add_worksheet(title=name, rows=5000, cols=len(headers))
             ws.append_row(headers)
         return ws
 
+    def write_profile(self, data):
     def write_profile(self, data):
         ws = self.profiles
         nick = data["NICK NAME"].lower()
         rows = ws.get_all_values()
         row_num = next((i+2 for i, r in enumerate(rows[1:]) if len(r)>1 and r[1].lower()==nick), None)
         values = [data.get(c,"") for c in ws.row_values(1)]
+        nick = data["NICK NAME"].lower()
+        rows = ws.get_all_values()
+        row_num = next((i+2 for i, r in enumerate(rows[1:]) if len(r)>1 and r[1].lower()==nick), None)
+        values = [data.get(c,"") for c in ws.row_values(1)]
         if row_num:
             ws.update(f"A{row_num}", [values])
+            ws.update(f"A{row_num}", [values])
         else:
+            ws.append_row(values)
+        time.sleep(0.8)
             ws.append_row(values)
         time.sleep(0.8)
 
@@ -233,12 +263,22 @@ def scrape_profile(driver, nick):
         WebDriverWait(driver, 12).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
         return {
             "IMAGE": "", "NICK NAME": nick, "TAGS": "", "LAST POST": "", "LAST POST TIME": "",
+def scrape_profile(driver, nick):
+    url = f"https://damadam.pk/users/{nick}/"
+    driver.get(url)
+    try:
+        WebDriverWait(driver, 12).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+        return {
+            "IMAGE": "", "NICK NAME": nick, "TAGS": "", "LAST POST": "", "LAST POST TIME": "",
             "FRIEND": "", "CITY": "", "GENDER": "", "MARRIED": "", "AGE": "", "JOINED": "",
+            "FOLLOWERS": "", "STATUS": "", "POSTS": "", "PROFILE LINK": url.rstrip("/"),
+            "INTRO": "", "SOURCE": "Online", "DATETIME SCRAP": pkt_time().strftime("%d-%b-%y %I:%M %p")
             "FOLLOWERS": "", "STATUS": "", "POSTS": "", "PROFILE LINK": url.rstrip("/"),
             "INTRO": "", "SOURCE": "Online", "DATETIME SCRAP": pkt_time().strftime("%d-%b-%y %I:%M %p")
         }
     except: return None
 
+# ============================= MAIN =============================
 # ============================= MAIN =============================
 def main():
     parser = argparse.ArgumentParser()
@@ -252,6 +292,7 @@ def main():
 
     global driver
     driver = setup_browser()
+    if not login(driver):
     if not login(driver):
         driver.quit()
         sys.exit(1)
@@ -276,7 +317,9 @@ def main():
         profile = scrape_profile(driver, nick)
         if profile:
             profile["SOURCE"] = source
+            profile["SOURCE"] = source
             sheets.write_profile(profile)
+            sheets.log_timing(nick, source, run_num)
             sheets.log_timing(nick, source, run_num)
             processed += 1
             log(f"[{processed}] Saved → {nick}")

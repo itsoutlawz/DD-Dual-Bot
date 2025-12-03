@@ -1,0 +1,57 @@
+name: DamaDam Master Scraper ✨
+
+on:
+  schedule:
+    - cron: '0,30 * * * *'   # Every 30 minutes (12:00, 12:30, 01:00, 01:30 ...)
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scrape Mode'
+        required: true
+        default: online
+        type: choice
+        options:
+          - online
+          - sheet
+      limit:
+        description: 'Max Profiles Per Run (0 = unlimited)'
+        required: true
+        default: '0'
+        type: string
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium gspread google-auth oauth2client
+
+      - name: Run DamaDam Scraper
+        env:
+          DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
+          DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          python Scraper.py --mode ${{ inputs.mode }} --limit ${{ inputs.limit }}
+
+      - name: Upload Debug Screenshots (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots-${{ github.run_number }}
+          path: |
+            *.png
+            *.log
+          retention-days: 7
