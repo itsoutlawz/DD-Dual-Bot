@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-DamaDam Master Bot v2.0 - FINAL VERSION (Username + Password Login)
-- No cookies.txt, no pickle, no Cloudflare issues
-- Real login like your working message bot
-- Auto saves cookies for faster future runs
+DamaDam Master Scraper v4.0 – FINAL WORKING VERSION
+→ python Scraper.py --mode online --limit 0
+→ python Scraper.py --mode sheet --limit 50
 """
 
 import os
@@ -25,10 +24,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
 
-# ============================================================================
-# CONFIG
-# ============================================================================
-
+# ============================= CONFIG =============================
 USERNAME = os.getenv("DAMADAM_USERNAME")
 PASSWORD = os.getenv("DAMADAM_PASSWORD")
 HOME_URL = "https://damadam.pk/"
@@ -39,23 +35,7 @@ COOKIE_FILE = "damadam_cookies.pkl"
 SHEET_URL = os.getenv('GOOGLE_SHEET_URL')
 GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON')
 
-MAX_PROFILES_PER_RUN = int(os.getenv('MAX_PROFILES_PER_RUN', '0'))
-
-# Sheets
-PROFILES_SHEET = "ProfilesData"
-TIMING_LOG_SHEET = "TimingLog"
-DASHBOARD_SHEET = "Dashboard"
-
-COLUMN_ORDER = [
-    "IMAGE", "NICK NAME", "TAGS", "LAST POST", "LAST POST TIME", "FRIEND", "CITY",
-    "GENDER", "MARRIED", "AGE", "JOINED", "FOLLOWERS", "STATUS",
-    "POSTS", "PROFILE LINK", "INTRO", "SOURCE", "DATETIME SCRAP"
-]
-
-# ============================================================================
-# HELPERS
-# ============================================================================
-
+# ============================= HELPERS =============================
 def pkt_time():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
 
@@ -63,10 +43,7 @@ def log(msg):
     print(f"[{pkt_time().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
 
-# ============================================================================
-# BROWSER
-# ============================================================================
-
+# ============================= BROWSER & LOGIN =============================
 def setup_browser():
     options = Options()
     options.add_argument("--headless=new")
@@ -87,7 +64,7 @@ def save_cookies(driver):
     try:
         with open(COOKIE_FILE, "wb") as f:
             pickle.dump(driver.get_cookies(), f)
-        log("Cookies saved for next run")
+        log("Cookies saved for future runs")
     except: pass
 
 def load_cookies(driver):
@@ -96,13 +73,13 @@ def load_cookies(driver):
     try:
         driver.get(HOME_URL)
         with open(COOKIE_FILE, "rb") as f:
-            cookies = pickle.load(f)
-            for cookie in cookies:
-                driver.add_cookie(cookie)
+            for cookie in pickle.load(f):
+                try: driver.add_cookie(cookie)
+                except: pass
         driver.refresh()
-        time.sleep(4)
+        time.sleep(5)
         if "logout" in driver.page_source.lower():
-            log("Logged in via saved cookies!")
+            log("Logged in using saved cookies!")
             return True
     except: pass
     return False
@@ -111,12 +88,12 @@ def login(driver):
     if load_cookies(driver):
         return True
 
-    log("Opening login page...")
+    log("Logging in with username/password...")
     driver.get(LOGIN_URL)
     time.sleep(10)
 
     try:
-        # Wait for username field (new name="username")
+        # NEW FIELD NAMES (current damadam.pk)
         username = WebDriverWait(driver, 20).until(
             EC.element_to_be_clickable((By.NAME, "username"))
         )
@@ -124,96 +101,88 @@ def login(driver):
 
         username.clear()
         username.send_keys(USERNAME)
-        time.sleep(1.5)
+        time.sleep(1)
         password.clear()
         password.send_keys(PASSWORD)
-        time.sleep(1.5)
+        time.sleep(1)
 
-        # Click the pink LOGIN button
         btn = driver.find_element(By.XPATH, "//button[contains(text(), 'LOGIN')]")
         driver.execute_script("arguments[0].click();", btn)
 
-        log("Login button clicked, waiting for redirect...")
+        log("Login button clicked, waiting...")
         time.sleep(12)
 
         if any(x in driver.current_url for x in ["/home/", "/online_kon/", "/users/"]):
-            log("LOGIN 100% SUCCESSFUL!")
+            log("LOGIN 100% SUCCESS!")
             save_cookies(driver)
             return True
         else:
-            log("Still not logged in - checking page source...")
-            if "login" in driver.current_url:
-                log("Still on login page - wrong password or blocked")
-            driver.save_screenshot("login_debug.png")
+            log("Login FAILED")
+            driver.save_screenshot("login_failed.png")
             return False
-
     except Exception as e:
-        log(f"Critical login error: {e}")
-        driver.save_screenshot("login_critical.png")
+        log(f"Login error: {e}")
+        driver.save_screenshot("login_error.png")
         return False
 
-# ============================================================================
-# SHEETS + FORMATTING (from your example bot)
-# ============================================================================
-
-def get_client():
-    creds = Credentials.from_service_account_info(json.loads(GOOGLE_CREDENTIALS_JSON),
-                scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    return gspread.authorize(creds)
-
+# ============================= SHEETS =============================
 class Sheets:
     def __init__(self):
-        self.wb = get_client().open_by_url(SHEET_URL)
-        self.profiles = self.ws(PROFILES_SHEET, COLUMN_ORDER)
-        self.timing = self.ws(TIMING_LOG_SHEET, ["Nickname", "Timestamp", "Source", "Run Number"])
-        self.dash = self.ws(DASHBOARD_SHEET, ["Metric", "Value"])
+        client = gspread.authorize(Credentials.from_service_account_info(
+            json.loads(GOOGLE_CREDENTIALS_JSON),
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        ))
+        self.wb = client.open_by_url(SHEET_URL)
+        self.profiles = self.ws("ProfilesData", ["IMAGE","NICK NAME","TAGS","LAST POST","LAST POST TIME","FRIEND","CITY","GENDER","MARRIED","AGE","JOINED","FOLLOWERS","STATUS","POSTS","PROFILE LINK","INTRO","SOURCE","DATETIME SCRAP"])
+        self.runlist = self.ws("RunList", ["Nickname","Status","Note"])
+        self.timing = self.ws("TimingLog", ["Nickname","Timestamp","Source","Run Number"])
+        self.dash = self.ws("Dashboard", ["Metric","Value"])
 
     def ws(self, name, headers):
         try:
             ws = self.wb.worksheet(name)
+            if ws.row_values(1) != headers:
+                ws.update('A1', [headers])
         except WorksheetNotFound:
             ws = self.wb.add_worksheet(title=name, rows=5000, cols=len(headers))
             ws.append_row(headers)
         return ws
 
-    def write(self, profile):
+    def write_profile(self, data):
         ws = self.profiles
-        nick = profile["NICK NAME"].lower()
+        nick = data["NICK NAME"].lower()
         rows = ws.get_all_values()
-        row_num = next((i+2 for i, r in enumerate(rows[1:]) if len(r) > 1 and r[1].lower() == nick), None)
-
-        values = [profile.get(col, "") for col in COLUMN_ORDER]
+        row_num = next((i+2 for i, r in enumerate(rows[1:]) if len(r)>1 and r[1].lower()==nick), None)
+        values = [data.get(c,"") for c in ws.row_values(1)]
         if row_num:
             ws.update(f"A{row_num}", [values])
         else:
             ws.append_row(values)
-        time.sleep(1)
+        time.sleep(0.8)
 
-    def log_time(self, nick, src, run):
-        self.timing.append_row([nick, pkt_time().strftime("%d-%b-%y %I:%M %p"), src, run])
+    def log_timing(self, nick, source, run):
+        self.timing.append_row([nick, pkt_time().strftime("%d-%b-%y %I:%M %p"), source, run])
 
-    def update_dash(self, data):
-        ws = self.dash
-        existing = {r[0]: i+1 for i, r in enumerate(ws.get_all_values()) if r}
-        for k, v in data.items():
-            if k in existing:
-                ws.update_cell(existing[k], 2, v)
-            else:
-                ws.append_row([k, v])
+    def get_pending_sheet(self):
+        rows = self.runlist.get_all_values()
+        pending = []
+        for i, row in enumerate(rows[1:], 2):
+            if len(row)>0 and row[0].strip():
+                status = row[1].strip().lower() if len(row)>1 else ""
+                if status in ["", "pending"]:
+                    pending.append({"nick": row[0].strip(), "row": i})
+        return pending
 
-# ============================================================================
-# SCRAPING
-# ============================================================================
-
+# ============================= SCRAPING =============================
 def get_online_users(driver):
     log("Fetching online users...")
     driver.get(ONLINE_URL)
-    time.sleep(6)
+    time.sleep(8)
     users = []
     for el in driver.find_elements(By.CSS_SELECTOR, "li.mbl.cl.sp b"):
-        nick = el.text.strip()
-        if nick and len(nick) >= 3:
-            users.append(nick)
+        n = el.text.strip()
+        if n and len(n)>=3 and any(c.isalpha() for c in n):
+            users.append(n)
     log(f"Found {len(users)} online users")
     return users
 
@@ -221,7 +190,7 @@ def scrape_profile(driver, nick):
     url = f"https://damadam.pk/users/{nick}/"
     driver.get(url)
     try:
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+        WebDriverWait(driver, 12).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
         return {
             "IMAGE": "", "NICK NAME": nick, "TAGS": "", "LAST POST": "", "LAST POST TIME": "",
             "FRIEND": "", "CITY": "", "GENDER": "", "MARRIED": "", "AGE": "", "JOINED": "",
@@ -231,19 +200,16 @@ def scrape_profile(driver, nick):
     except:
         return None
 
-# ============================================================================
-# MAIN
-# ============================================================================
-
+# ============================= MAIN =============================
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=0)
+    parser = argparse.ArgumentParser(description="DamaDam Master Scraper")
+    parser.add_argument("--mode", choices=["online", "sheet"], default="online", help="online = live users, sheet = from RunList")
+    parser.add_argument("--limit", type=int, default=0, help="Max profiles to scrape (0 = unlimited)")
     args = parser.parse_args()
-    limit = args.limit or MAX_PROFILES_PER_RUN
 
-    print("\n" + "="*80)
-    print("DAMADAM MASTER BOT v2.0 - USERNAME/PASSWORD LOGIN")
-    print("="*80 + "\n")
+    print("\n" + "═"*80)
+    print(f"DAMADAM MASTER SCRAPER v4.0 → MODE: {args.mode.upper()} | LIMIT: {args.limit or 'UNLIMITED'}")
+    print("═"*80 + "\n")
 
     driver = setup_browser()
     if not login(driver):
@@ -251,28 +217,42 @@ def main():
         sys.exit(1)
 
     sheets = Sheets()
-    run_num = len(sheets.dash.get_all_values())
-    users = get_online_users(driver)
+    run_num = len(sheets.dash.get_all_values()) + 1
 
-    saved = 0
-    for i, nick in enumerate(users):
-        if limit and saved >= limit:
+    if args.mode == "online":
+        nicks = get_online_users(driver)
+        source = "Online"
+    else:
+        targets = sheets.get_pending_sheet()
+        if not targets:
+            log("No pending nicknames in RunList sheet!")
+            driver.quit()
+            return
+        nicks = [t["nick"] for t in targets]
+        source = "Sheet"
+        log(f"Found {len(nicks)} pending in RunList")
+
+    processed = 0
+    for i, nick in enumerate(nicks):
+        if args.limit and processed >= args.limit:
             break
         profile = scrape_profile(driver, nick)
         if profile:
-            sheets.write(profile)
-            sheets.log_time(nick, "Online", run_num)
-            saved += 1
-            log(f"[{i+1}] Saved → {nick}")
-        time.sleep(random.uniform(1.5, 3))
+            profile["SOURCE"] = source
+            sheets.write_profile(profile)
+            sheets.log_timing(nick, source, run_num)
+            processed += 1
+            log(f"[{processed}] SAVED → {nick}")
+        else:
+            log(f"[{i+1}] FAILED → {nick}")
+        time.sleep(random.uniform(1.8, 3.2))
 
-    sheets.update_dash({
-        "Last Run": pkt_time().strftime("%d-%b-%y %I:%M %p"),
-        "Profiles Processed": saved,
-        "Run Number": run_num + 1
-    })
+    sheets.dash.append_row(["Last Run", pkt_time().strftime("%d-%b-%y %I:%M %p")])
+    sheets.dash.append_row(["Mode", args.mode.title()])
+    sheets.dash.append_row(["Processed", processed])
+    sheets.dash.append_row(["Run Number", run_num])
 
-    log("ALL DONE!")
+    log("RUN COMPLETED SUCCESSFULLY!")
     driver.quit()
 
 if __name__ == "__main__":
