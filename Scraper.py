@@ -152,6 +152,9 @@ def load_cookies(driver):
 # ------------------------------------------------------------
 # LOGIN
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+# LOGIN
+# ------------------------------------------------------------
 def login(driver):
     if not USE_SELENIUM or driver is None:
         log("DEMO MODE login")
@@ -163,13 +166,9 @@ def login(driver):
 
     try:
         driver.get(LOGIN_URL)
-    except:
-        log("Login page open fail → DEMO MODE")
-        return True
+        time.sleep(4)  # Wait for the page to load
 
-    time.sleep(4)
-
-    try:
+        # Wait for the username field to be present
         user = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.NAME, "username"))
         )
@@ -185,19 +184,24 @@ def login(driver):
         try:
             btn = driver.find_element(By.XPATH, "//button[contains(.,'LOGIN')]")
             btn.click()
-        except:
-            pwd.send_keys("\n")
+        except Exception as e:
+            log(f"Login button click failed: {e}")
+            pwd.send_keys("\n")  # Fallback to pressing Enter
 
-        time.sleep(7)
+        time.sleep(7)  # Wait for the login process to complete
 
+        # Check if login was successful
         if "logout" in driver.page_source.lower():
             save_cookies(driver)
             log("LOGIN SUCCESS ✔")
             return True
-
-        log("LOGIN FAILED ❌")
-        ss("login_fail")
-        return False
+        else:
+            log("LOGIN FAILED ❌")
+            ss("login_fail")
+            # Additional logging to help debug
+            log("Page source after login attempt:")
+            log(driver.page_source)  # Log the page source for debugging
+            return False
 
     except Exception as e:
         log(f"Login error: {e}")
