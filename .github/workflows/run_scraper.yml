@@ -1,0 +1,30 @@
+name: Run DamaDam Scraper
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # Every hour
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Requirements
+        run: |
+          pip install -r requirements.txt
+
+      - name: Add Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Run Scraper
+        run: |
+          python Scraper.py --mode online
